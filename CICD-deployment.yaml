@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+
+    environment {
+        PROJECT_ID = 'your-project-id'
+        IMAGE_NAME = 'mywebapp'
+        GCR_REGISTRY = "gcr.io/${PROJECT_ID}/${IMAGE_NAME}"
+        GKE_CLUSTER = 'your-gke-cluster-name'
+        GKE_ZONE = 'your-gke-zone'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                script {
+                    docker.build("${GCR_REGISTRY}:${env.BUILD_NUMBER}")
+                }
+            }
+        }
+
+        stage('Push to GCR') {
+            steps {
+                script {
+                    docker.withRegistry('https://gcr.io', 'gcr-credentials') {
+                        dockerImage.push("${GCR_REGISTRY}:${env.BUILD_NUMBER}")
+                        dockerImage.push("${GCR_REGISTRY}:latest")
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to GKE') {
+            steps {
+                script {
+                    sh "gcloud container clusters get-credentials ${GKE_CLUSTER} --zone ${GKE_ZONE} --project ${PROJECT_ID}"
+                    sh "kubectl set image deployment/${IMAGE_NAME} ${IMAGE_NAME}=${GCR_REGISTRY}:${env.BUILD_NUMBER} --record=true"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
